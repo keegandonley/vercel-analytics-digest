@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { put } from "@vercel/blob";
 import { buildReport } from "@/lib/analytics";
 import { getConfig } from "@/lib/config";
@@ -23,7 +23,7 @@ function isAuthorized(request: Request, cronSecret: string): boolean {
 }
 
 /** Uploads the standalone report to Blob; returns undefined if Blob isn't set up. */
-async function uploadReport(html: string, generatedAt: Date): Promise<string | undefined> {
+async function uploadReport(html: string): Promise<string | undefined> {
   // On Vercel the SDK authenticates via OIDC using BLOB_STORE_ID + VERCEL_OIDC_TOKEN,
   // and falls back to BLOB_READ_WRITE_TOKEN elsewhere. Skip the upload only when
   // neither is configured, otherwise let the SDK resolve credentials from the env.
@@ -31,7 +31,9 @@ async function uploadReport(html: string, generatedAt: Date): Promise<string | u
     return undefined;
   }
   try {
-    const key = `reports/${generatedAt.toISOString().replace(/[:.]/g, "-")}.html`;
+    // A random UUID keeps report URLs unguessable — the public blob URL is the only
+    // access control, so it must not be enumerable from a timestamp or sequence.
+    const key = `reports/${randomUUID()}.html`;
     const blob = await put(key, html, {
       access: "public",
       contentType: "text/html; charset=utf-8",
@@ -72,7 +74,7 @@ export async function GET(request: Request): Promise<Response> {
       config.excludedProjects,
     );
 
-    const reportUrl = await uploadReport(renderReportPage(report), report.generatedAt);
+    const reportUrl = await uploadReport(renderReportPage(report));
     const emailHtml = renderEmailHtml(report, reportUrl);
     const incompleteSuffix =
       report.incompleteCount > 0 ? ` (${report.incompleteCount} incomplete)` : "";
