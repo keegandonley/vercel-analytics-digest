@@ -100,11 +100,18 @@ function parseTopRoutes(
   dimensionKey: "route" | "requestPath",
 ): RouteStat[] {
   return rows
-    .map((row) => ({
-      route: typeof row[dimensionKey] === "string" ? (row[dimensionKey] as string) : "(unknown)",
-      pageviews: toNumber(row.pageviews),
-    }))
-    .filter((entry) => entry.pageviews > 0 && entry.route.toLowerCase() !== "others")
+    .map((row) => ({ value: row[dimensionKey], pageviews: toNumber(row.pageviews) }))
+    // Keep only rows with a real, non-empty page value. Non-framework projects
+    // return an empty-string `route`, which must be treated as "no route" so the
+    // caller's requestPath fallback can take over instead of showing a blank line.
+    .filter(
+      (entry): entry is { value: string; pageviews: number } =>
+        entry.pageviews > 0 &&
+        typeof entry.value === "string" &&
+        entry.value.trim() !== "" &&
+        entry.value.toLowerCase() !== "others",
+    )
+    .map((entry) => ({ route: entry.value, pageviews: entry.pageviews }))
     .sort((a, b) => b.pageviews - a.pageviews);
 }
 
