@@ -17,6 +17,12 @@ const ENV_VARS: EnvVar[] = [
     description: "Team ID (team_…). Only needed if the projects live under a team, not your personal account.",
   },
   {
+    name: "EXCLUDED_PROJECTS",
+    required: false,
+    description:
+      "Comma-separated project names or ids to omit from the digest (e.g. internal tools). Matched case-insensitively; excluded projects are never queried.",
+  },
+  {
     name: "RESEND_API_KEY",
     required: true,
     description: "Resend API key used to send the digest email.",

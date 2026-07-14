@@ -23,12 +23,11 @@ function isAuthorized(request: Request, cronSecret: string): boolean {
 }
 
 /** Uploads the standalone report to Blob; returns undefined if Blob isn't set up. */
-async function uploadReport(
-  html: string,
-  generatedAt: Date,
-  blobToken: string | undefined,
-): Promise<string | undefined> {
-  if (!blobToken) {
+async function uploadReport(html: string, generatedAt: Date): Promise<string | undefined> {
+  // On Vercel the SDK authenticates via OIDC using BLOB_STORE_ID + VERCEL_OIDC_TOKEN,
+  // and falls back to BLOB_READ_WRITE_TOKEN elsewhere. Skip the upload only when
+  // neither is configured, otherwise let the SDK resolve credentials from the env.
+  if (!process.env.BLOB_STORE_ID && !process.env.BLOB_READ_WRITE_TOKEN) {
     return undefined;
   }
   try {
@@ -36,7 +35,6 @@ async function uploadReport(
     const blob = await put(key, html, {
       access: "public",
       contentType: "text/html; charset=utf-8",
-      token: blobToken,
     });
     return blob.url;
   } catch (error) {
@@ -66,16 +64,15 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const report = await buildReport({
-      token: config.vercelToken,
-      teamId: config.vercelTeamId,
-    });
-
-    const reportUrl = await uploadReport(
-      renderReportPage(report),
-      report.generatedAt,
-      config.blobToken,
+    const report = await buildReport(
+      {
+        token: config.vercelToken,
+        teamId: config.vercelTeamId,
+      },
+      config.excludedProjects,
     );
+
+    const reportUrl = await uploadReport(renderReportPage(report), report.generatedAt);
     const emailHtml = renderEmailHtml(report, reportUrl);
     const incompleteSuffix =
       report.incompleteCount > 0 ? ` (${report.incompleteCount} incomplete)` : "";

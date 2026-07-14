@@ -11,7 +11,8 @@ export interface AppConfig {
   reportFrom: string;
   reportTo: string[];
   cronSecret: string | undefined;
-  blobToken: string | undefined;
+  /** Project names or ids to omit from the digest, lower-cased for matching. */
+  excludedProjects: string[];
 }
 
 function required(name: string): string {
@@ -25,6 +26,14 @@ function required(name: string): string {
 function optional(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+/** Parses a comma-separated env var into a trimmed, non-empty, lower-cased list. */
+function csvLower(name: string): string[] {
+  return (optional(name) ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function getConfig(): AppConfig {
@@ -43,6 +52,6 @@ export function getConfig(): AppConfig {
     reportFrom: required("REPORT_FROM"),
     reportTo,
     cronSecret: optional("CRON_SECRET"),
-    blobToken: optional("BLOB_READ_WRITE_TOKEN"),
+    excludedProjects: csvLower("EXCLUDED_PROJECTS"),
   };
 }

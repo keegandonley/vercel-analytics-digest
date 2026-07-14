@@ -63,46 +63,153 @@ function formatWindowLabel(report: Report): string {
   return `${fmt.format(new Date(report.sinceMs))} → ${fmt.format(new Date(report.untilMs))}`;
 }
 
-function projectRowsHtml(projects: ProjectReport[]): string {
-  if (projects.length === 0) {
-    return `<tr><td style="padding:16px;color:#6b7280;font-size:14px;">No projects with Web Analytics enabled were found.</td></tr>`;
+const MONO_FONT = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const SANS_FONT =
+  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+/** Single accent hue used for links, bars, and small flourishes in the email. */
+const ACCENT = "#2a78d6";
+/** Unfilled remainder of the traffic bar — a lighter step of the accent's own ramp. */
+const ACCENT_TRACK = "#dce9f9";
+
+/** Brighter delta variants that stay legible on the dark hero band. */
+const HERO_DELTA_COLORS: Record<Delta["direction"], string> = {
+  up: "#4ade80",
+  down: "#f87171",
+  flat: "#94a3b8",
+};
+
+/**
+ * Email-safe horizontal meter: two table cells whose widths carry the value.
+ * Reads even when border-radius is stripped; a 2px white border separates
+ * fill from track.
+ */
+function trafficBarHtml(pageviews: number, maxPageviews: number): string {
+  const raw = Math.round((pageviews / maxPageviews) * 100);
+  // Keep non-zero traffic visible as at least a sliver.
+  const percent = pageviews > 0 ? Math.min(100, Math.max(raw, 3)) : 0;
+
+  const cellStyle = "height:6px;line-height:6px;font-size:1px;border-radius:3px;";
+  const fillCell = `<td width="${percent}%" height="6" bgcolor="${ACCENT}" style="background-color:${ACCENT};${cellStyle}border-right:2px solid #ffffff;">&nbsp;</td>`;
+  const trackCell = `<td height="6" bgcolor="${ACCENT_TRACK}" style="background-color:${ACCENT_TRACK};${cellStyle}">&nbsp;</td>`;
+
+  let cells: string;
+  if (percent <= 0) {
+    cells = trackCell;
+  } else if (percent >= 100) {
+    cells = `<td height="6" bgcolor="${ACCENT}" style="background-color:${ACCENT};${cellStyle}">&nbsp;</td>`;
+  } else {
+    cells = `${fillCell}${trackCell}`;
   }
 
-  return projects
-    .map((project) => {
-      const delta = computeDelta(project.current.pageviews, project.previous.pageviews);
-      const routes =
-        project.topRoutes.length > 0
-          ? project.topRoutes
-              .map((route) => escapeHtml(route.route))
-              .join(", ")
-          : "—";
-      const detail = project.error
-        ? `<span style="color:#dc2626;">${escapeHtml(project.error)}</span>`
-        : project.skipped
-          ? `<span style="color:#b45309;">Skipped — run time budget reached</span>`
-          : `<span style="color:#6b7280;">${routes}</span>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr>${cells}</tr></table>`;
+}
 
-      return `
-        <tr>
-          <td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;font-size:14px;font-weight:600;color:#111827;">${escapeHtml(
-            project.name,
-          )}</td>
-          <td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;font-size:14px;color:#111827;text-align:right;">${formatNumber(
+/** One labelled card per project: name, delta, metrics, traffic bar, Top pages. */
+function projectCardHtml(project: ProjectReport, maxPageviews: number): string {
+  const failed = Boolean(project.error) || Boolean(project.skipped);
+  const delta = computeDelta(project.current.pageviews, project.previous.pageviews);
+  // A failed fetch has no meaningful numbers, so its delta is shown as neutral.
+  const deltaText = failed ? "–" : delta.text;
+  const deltaColor = failed ? DELTA_COLORS.flat : DELTA_COLORS[delta.direction];
+
+  let statusRow = "";
+  let metricsRow = "";
+  let barRow = "";
+  let bodyRow = "";
+
+  if (project.error) {
+    statusRow = `
+          <tr>
+            <td colspan="2" style="padding:6px 0 0;font-family:${SANS_FONT};font-size:13px;line-height:1.5;color:#dc2626;"><strong style="font-weight:600;">⚠ Failed to load</strong> — ${escapeHtml(
+              project.error,
+            )}</td>
+          </tr>`;
+  } else if (project.skipped) {
+    statusRow = `
+          <tr>
+            <td colspan="2" style="padding:6px 0 0;font-family:${SANS_FONT};font-size:13px;line-height:1.5;color:#b45309;"><strong style="font-weight:600;">◷ Skipped</strong> — run time budget reached</td>
+          </tr>`;
+  } else {
+    const metrics =
+      project.current.pageviews === 0 && project.current.visitors === 0
+        ? `<span style="color:#9ca3af;">No traffic in this window</span>`
+        : `<strong style="font-weight:600;color:#111827;">${formatNumber(
             project.current.pageviews,
-          )}</td>
-          <td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;font-size:14px;color:#111827;text-align:right;">${formatNumber(
+          )}</strong> pageviews&nbsp;&nbsp;<span style="color:#d1d5db;">·</span>&nbsp;&nbsp;<strong style="font-weight:600;color:#111827;">${formatNumber(
             project.current.visitors,
-          )}</td>
-          <td style="padding:12px 8px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:right;font-weight:600;color:${
-            DELTA_COLORS[delta.direction]
-          };">${delta.text}</td>
-        </tr>
-        <tr>
-          <td colspan="4" style="padding:0 8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;">${detail}</td>
-        </tr>`;
-    })
-    .join("");
+          )}</strong> visitors`;
+    metricsRow = `
+          <tr>
+            <td colspan="2" style="padding:4px 0 0;font-family:${SANS_FONT};font-size:13px;color:#6b7280;">${metrics}</td>
+          </tr>`;
+    barRow = `
+          <tr>
+            <td colspan="2" style="padding:12px 0 0;">${trafficBarHtml(
+              project.current.pageviews,
+              maxPageviews,
+            )}</td>
+          </tr>`;
+
+    if (project.topRoutes.length > 0) {
+      const routeRows = project.topRoutes
+        .map(
+          (route) => `
+            <tr>
+              <td style="padding:5px 0;border-top:1px solid #f3f4f6;font-family:${MONO_FONT};font-size:12px;color:#4b5563;word-break:break-all;">${escapeHtml(
+                route.route,
+              )}</td>
+              <td align="right" style="padding:5px 0 5px 16px;border-top:1px solid #f3f4f6;font-family:${SANS_FONT};font-size:12px;color:#9ca3af;white-space:nowrap;">${formatNumber(
+                route.pageviews,
+              )}</td>
+            </tr>`,
+        )
+        .join("");
+      bodyRow = `
+          <tr>
+            <td colspan="2" style="padding:14px 0 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                <tr>
+                  <td colspan="2" style="padding:0 0 5px;font-family:${SANS_FONT};font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;">Top pages <span style="font-weight:400;letter-spacing:0.06em;">· by pageviews</span></td>
+                </tr>
+                ${routeRows}
+              </table>
+            </td>
+          </tr>`;
+    }
+  }
+
+  return `
+    <tr>
+      <td style="padding:18px 28px 20px;border-top:1px solid #f0f1f3;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+          <tr>
+            <td style="font-family:${SANS_FONT};font-size:15px;font-weight:600;letter-spacing:-0.1px;color:#111827;word-break:break-word;">${escapeHtml(
+              project.name,
+            )}</td>
+            <td align="right" valign="top" style="padding-left:12px;font-family:${SANS_FONT};font-size:13px;font-weight:700;white-space:nowrap;color:${deltaColor};">${deltaText}</td>
+          </tr>
+          ${statusRow}
+          ${metricsRow}
+          ${barRow}
+          ${bodyRow}
+        </table>
+      </td>
+    </tr>`;
+}
+
+function projectCardsHtml(projects: ProjectReport[]): string {
+  if (projects.length === 0) {
+    return `
+    <tr>
+      <td style="padding:20px 28px 24px;border-top:1px solid #f0f1f3;font-family:${SANS_FONT};font-size:14px;color:#6b7280;">No projects with Web Analytics enabled were found.</td>
+    </tr>`;
+  }
+  const maxPageviews = Math.max(
+    1,
+    ...projects.map((project) => project.current.pageviews),
+  );
+  return projects.map((project) => projectCardHtml(project, maxPageviews)).join("");
 }
 
 /** Inline-styled email body. Kept table-based for email-client compatibility. */
@@ -111,64 +218,130 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
     report.totals.pageviews,
     report.totals.previous.pageviews,
   );
+  const visitorsDelta = computeDelta(
+    report.totals.visitors,
+    report.totals.previous.visitors,
+  );
 
-  const linkBlock = reportUrl
-    ? `<p style="margin:24px 0 0;font-size:14px;">
-         <a href="${escapeHtml(reportUrl)}" style="color:#2563eb;font-weight:600;text-decoration:none;">View the full interactive report →</a>
-       </p>`
-    : "";
+  // Inbox preview line; hidden inside the email body itself.
+  const preheader = `${formatNumber(report.totals.pageviews)} pageviews (${
+    totalsDelta.text
+  }) across ${report.projects.length} project${
+    report.projects.length === 1 ? "" : "s"
+  } in the last 6 hours.`;
 
   const incompleteBlock =
     report.incompleteCount > 0
-      ? `<p style="margin:4px 0 0;font-size:13px;color:#b45309;font-weight:600;">⚠ ${report.incompleteCount} of ${report.projects.length} projects could not be loaded — totals below are undercounted.</p>`
+      ? `
+        <tr>
+          <td bgcolor="#fef3c7" style="background-color:#fef3c7;padding:12px 28px;font-family:${SANS_FONT};font-size:13px;line-height:1.5;color:#92400e;"><strong style="font-weight:600;">⚠ Partial data</strong> — ${report.incompleteCount} of ${report.projects.length} projects could not be loaded, so totals are undercounted.</td>
+        </tr>`
       : "";
 
+  const linkBlock = reportUrl
+    ? `
+        <tr>
+          <td align="center" style="padding:26px 28px 6px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">
+              <tr>
+                <td bgcolor="#111827" style="background-color:#111827;border-radius:8px;">
+                  <a href="${escapeHtml(
+                    reportUrl,
+                  )}" style="display:inline-block;padding:12px 26px;font-family:${SANS_FONT};font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">View the full report&nbsp;&nbsp;→</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>`
+    : "";
+
   return `
-  <div style="background:#f3f4f6;padding:24px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
-      <div style="padding:24px 24px 8px;">
-        <h1 style="margin:0;font-size:20px;color:#111827;">Analytics digest · last 6 hours</h1>
-        <p style="margin:4px 0 0;font-size:13px;color:#6b7280;">${formatWindowLabel(report)}</p>
-        ${incompleteBlock}
-      </div>
-      <div style="padding:8px 24px 0;">
-        <table style="width:100%;border-collapse:collapse;">
-          <tr>
-            <td style="padding:12px 8px 4px;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;">Total pageviews</td>
-            <td style="padding:12px 8px 4px;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;text-align:right;">vs prior 6h</td>
-          </tr>
-          <tr>
-            <td style="padding:0 8px 12px;font-size:28px;font-weight:700;color:#111827;">${formatNumber(
-              report.totals.pageviews,
-            )}</td>
-            <td style="padding:0 8px 12px;font-size:16px;font-weight:600;text-align:right;color:${
-              DELTA_COLORS[totalsDelta.direction]
-            };">${totalsDelta.text}</td>
-          </tr>
-        </table>
-      </div>
-      <div style="padding:0 16px 8px;">
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
+  <div style="margin:0;padding:0;background-color:#ffffff;">
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(
+      preheader,
+    )}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="background-color:#ffffff;border-collapse:collapse;">
+      <tr>
+        <td align="center" style="padding:0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="border-collapse:collapse;max-width:620px;">
             <tr>
-              <th style="padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;text-align:left;">Project</th>
-              <th style="padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;text-align:right;">Views</th>
-              <th style="padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;text-align:right;">Visitors</th>
-              <th style="padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#6b7280;text-align:right;">Δ Views</th>
+              <td>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="border-collapse:collapse;background-color:#ffffff;">
+
+                  <tr>
+                    <td style="padding:28px 28px 22px;">
+                      <div style="font-family:${SANS_FONT};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#6b7280;"><span style="color:#111827;">▲</span>&nbsp;&nbsp;Vercel Analytics</div>
+                      <div style="padding-top:8px;font-family:${SANS_FONT};font-size:23px;font-weight:700;letter-spacing:-0.4px;color:#111827;">Six-hour traffic digest</div>
+                      <div style="padding-top:6px;font-family:${MONO_FONT};font-size:12px;color:#9ca3af;">${escapeHtml(
+                        formatWindowLabel(report),
+                      )}</div>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td bgcolor="#111827" style="background-color:#111827;padding:26px 28px 28px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                        <tr>
+                          <td style="padding-bottom:12px;font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">Total pageviews</td>
+                          <td align="right" style="padding-bottom:12px;font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">vs prior 6h</td>
+                        </tr>
+                        <tr>
+                          <td style="font-family:${SANS_FONT};font-size:44px;font-weight:700;letter-spacing:-1.5px;line-height:1;color:#ffffff;">${formatNumber(
+                            report.totals.pageviews,
+                          )}</td>
+                          <td align="right" valign="bottom" style="padding-left:16px;font-family:${SANS_FONT};font-size:18px;font-weight:700;white-space:nowrap;color:${
+                            HERO_DELTA_COLORS[totalsDelta.direction]
+                          };">${totalsDelta.text}</td>
+                        </tr>
+                        <tr>
+                          <td colspan="2" style="padding-top:14px;font-family:${SANS_FONT};font-size:13px;line-height:1.5;color:#9ca3af;"><strong style="font-weight:600;color:#e5e7eb;">${formatNumber(
+                            report.totals.visitors,
+                          )}</strong> unique visitors <span style="font-weight:600;color:${
+                            HERO_DELTA_COLORS[visitorsDelta.direction]
+                          };">${visitorsDelta.text}</span>&nbsp;&nbsp;<span style="color:#374151;">·</span>&nbsp;&nbsp;${
+                            report.projects.length
+                          } project${report.projects.length === 1 ? "" : "s"}</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  ${incompleteBlock}
+
+                  <tr>
+                    <td style="padding:24px 28px 12px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                        <tr>
+                          <td style="font-family:${SANS_FONT};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Projects</td>
+                          <td align="right" style="font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">Δ vs prior 6h</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  ${projectCardsHtml(report.projects)}
+
+                  ${linkBlock}
+
+                  <tr>
+                    <td style="padding:${reportUrl ? "22" : "26"}px 28px 26px;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                        <tr>
+                          <td align="center" style="padding-top:20px;border-top:1px solid #f0f1f3;font-family:${SANS_FONT};font-size:12px;line-height:1.6;color:#9ca3af;">Generated ${escapeHtml(
+                            report.generatedAt.toISOString(),
+                          )}<br/>Vercel Web Analytics · every 6 hours</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            ${projectRowsHtml(report.projects)}
-          </tbody>
-        </table>
-      </div>
-      <div style="padding:0 24px 24px;">
-        ${linkBlock}
-        <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">Generated ${escapeHtml(
-          report.generatedAt.toISOString(),
-        )} · Vercel Web Analytics</p>
-      </div>
-    </div>
+          </table>
+        </td>
+      </tr>
+    </table>
   </div>`;
 }
 

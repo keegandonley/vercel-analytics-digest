@@ -186,13 +186,24 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function buildReport(auth: VercelAuth): Promise<Report> {
+export async function buildReport(
+  auth: VercelAuth,
+  excludedProjects: readonly string[] = [],
+): Promise<Report> {
   const untilMs = Date.now();
   const sinceMs = untilMs - WINDOW_MS;
   const previousUntil = sinceMs;
   const previousSince = sinceMs - WINDOW_MS;
 
-  const projects = await listAnalyticsProjects(auth);
+  const allProjects = await listAnalyticsProjects(auth);
+
+  // Exclude opted-out projects (matched by name or id, case-insensitively) before
+  // any analytics calls so internal tools stay out of the digest and cost nothing.
+  const excluded = new Set(excludedProjects.map((entry) => entry.toLowerCase()));
+  const projects = allProjects.filter(
+    (project) =>
+      !excluded.has(project.name.toLowerCase()) && !excluded.has(project.id.toLowerCase()),
+  );
 
   // Once the budget is spent, stop hitting the API and mark the rest as skipped so
   // a slow API day yields a partial (clearly-labelled) digest instead of a timeout.
