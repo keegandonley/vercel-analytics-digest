@@ -89,6 +89,25 @@ function sumWindow(rows: Array<Record<string, unknown>>): WindowStats {
   );
 }
 
+/**
+ * Turns aggregate rows into ranked top pages. `dimensionKey` is where the grouped
+ * value lives on each row (`route` for framework patterns, `requestPath` for raw
+ * URLs). The API rolls the remainder past `limit` into an "Others" bucket, which
+ * is dropped (real values start with "/", so this never removes a genuine page).
+ */
+function parseTopRoutes(
+  rows: Array<Record<string, unknown>>,
+  dimensionKey: "route" | "requestPath",
+): RouteStat[] {
+  return rows
+    .map((row) => ({
+      route: typeof row[dimensionKey] === "string" ? (row[dimensionKey] as string) : "(unknown)",
+      pageviews: toNumber(row.pageviews),
+    }))
+    .filter((entry) => entry.pageviews > 0 && entry.route.toLowerCase() !== "others")
+    .sort((a, b) => b.pageviews - a.pageviews);
+}
+
 async function fetchProjectReport(
   auth: VercelAuth,
   project: { id: string; name: string },
@@ -137,19 +156,27 @@ async function fetchProjectReport(
       ? sumWindow(previousResult.value)
       : { pageviews: 0, visitors: 0 };
 
-  const topRoutes: RouteStat[] =
-    routesResult.status === "fulfilled"
-      ? routesResult.value
-          .map((row) => ({
-            route: typeof row.route === "string" ? row.route : "(unknown)",
-            pageviews: toNumber(row.pageviews),
-          }))
-          // The API returns the top `limit` routes by pageviews and rolls the
-          // remainder into an "Others" bucket; drop that so we show only real routes
-          // (real route values start with "/", so this never removes one).
-          .filter((entry) => entry.pageviews > 0 && entry.route.toLowerCase() !== "others")
-          .sort((a, b) => b.pageviews - a.pageviews)
-      : [];
+  let topRoutes: RouteStat[] =
+    routesResult.status === "fulfilled" ? parseTopRoutes(routesResult.value, "route") : [];
+
+  // Static/non-framework projects report traffic under `requestPath` but leave the
+  // `route` dimension empty, so `by=route` comes back with nothing. Fall back to raw
+  // request paths for those — but only when there's real traffic to break down, to
+  // avoid a wasted query on idle projects.
+  if (topRoutes.length === 0 && current.pageviews > 0) {
+    try {
+      const pathRows = await queryAggregate(auth, {
+        projectId: project.id,
+        by: "requestPath",
+        sinceMs: currentSince,
+        untilMs: currentUntil,
+        limit: TOP_ROUTES_LIMIT,
+      });
+      topRoutes = parseTopRoutes(pathRows, "requestPath");
+    } catch {
+      // A missing routes breakdown is non-fatal; keep the empty list.
+    }
+  }
 
   return {
     id: project.id,
