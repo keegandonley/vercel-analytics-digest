@@ -4,7 +4,10 @@
  */
 
 const API_BASE = "https://api.vercel.com";
-const REQUEST_TIMEOUT_MS = 15_000;
+// Per-request ceiling. The data phase is bounded by DATA_BUDGET_MS (dispatch stops
+// then) + one in-flight request of this length, so keep the sum well under the
+// route's maxDuration (see analytics.ts / route.ts).
+const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface VercelAuth {
   token: string;

@@ -355,7 +355,7 @@ export function renderReportPage(report: Report): string {
   const cards = report.projects
     .map((project) => {
       const delta = computeDelta(project.current.pageviews, project.previous.pageviews);
-      const barWidth = Math.round((project.current.pageviews / maxPageviews) * 100);
+      const barWidth = Math.max(0, Math.round((project.current.pageviews / maxPageviews) * 100));
       const routes =
         project.topRoutes.length > 0
           ? project.topRoutes

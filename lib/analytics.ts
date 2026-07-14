@@ -34,8 +34,17 @@ const CONCURRENCY = 5;
  * Stop dispatching new project fetches after this much wall time so the function
  * still has room (under its 60s maxDuration) to render, upload, and email a
  * partial digest rather than being hard-killed with nothing sent.
+ *
+ * The whole data phase is bounded by DATA_BUDGET_MS + one in-flight request
+ * (REQUEST_TIMEOUT_MS in vercel-api.ts): once the budget passes, no new project is
+ * dispatched and the requestPath fallback is skipped, so at most one request per
+ * in-flight worker is still resolving. Keep (DATA_BUDGET_MS + REQUEST_TIMEOUT_MS)
+ * comfortably under route.ts's maxDuration so render+upload+email have headroom.
  */
-const DATA_BUDGET_MS = 35_000;
+const DATA_BUDGET_MS = 30_000;
+
+/** Reused zero window so the many "no data" cases don't each allocate a literal. */
+const ZERO_WINDOW: WindowStats = { pageviews: 0, visitors: 0 };
 
 export interface WindowStats {
   pageviews: number;
@@ -122,6 +131,7 @@ async function fetchProjectReport(
   currentUntil: number,
   previousSince: number,
   previousUntil: number,
+  deadline: number,
 ): Promise<ProjectReport | null> {
   // Settle each query independently: the top-routes call is a nice-to-have, so its
   // failure must not zero out the headline pageviews/visitors, which flow into the
@@ -154,23 +164,25 @@ async function fetchProjectReport(
     return null;
   }
 
-  const current =
-    currentResult.status === "fulfilled"
-      ? sumWindow(currentResult.value)
-      : { pageviews: 0, visitors: 0 };
+  const currentFailed = currentResult.status === "rejected";
+  const current = currentResult.status === "fulfilled" ? sumWindow(currentResult.value) : ZERO_WINDOW;
+  // If the current window failed, force previous to zero too. Otherwise this project
+  // would add 0 to the current total but real numbers to the previous total, making
+  // the headline delta look like a traffic crash instead of a transient fetch error.
   const previous =
-    previousResult.status === "fulfilled"
+    !currentFailed && previousResult.status === "fulfilled"
       ? sumWindow(previousResult.value)
-      : { pageviews: 0, visitors: 0 };
+      : ZERO_WINDOW;
 
   let topRoutes: RouteStat[] =
     routesResult.status === "fulfilled" ? parseTopRoutes(routesResult.value, "route") : [];
 
   // Static/non-framework projects report traffic under `requestPath` but leave the
   // `route` dimension empty, so `by=route` comes back with nothing. Fall back to raw
-  // request paths for those — but only when there's real traffic to break down, to
-  // avoid a wasted query on idle projects.
-  if (topRoutes.length === 0 && current.pageviews > 0) {
+  // request paths for those — but only when there's real traffic to break down, and
+  // only while the time budget holds (skipping it near the deadline keeps the data
+  // phase bounded). Idle projects also skip it to avoid a wasted query.
+  if (topRoutes.length === 0 && current.pageviews > 0 && Date.now() < deadline) {
     try {
       const pathRows = await queryAggregate(auth, {
         projectId: project.id,
@@ -247,13 +259,21 @@ export async function buildReport(
       return Promise.resolve<ProjectReport | null>({
         id: project.id,
         name: project.name,
-        current: { pageviews: 0, visitors: 0 },
-        previous: { pageviews: 0, visitors: 0 },
+        current: ZERO_WINDOW,
+        previous: ZERO_WINDOW,
         topRoutes: [],
         skipped: true,
       });
     }
-    return fetchProjectReport(auth, project, sinceMs, untilMs, previousSince, previousUntil);
+    return fetchProjectReport(
+      auth,
+      project,
+      sinceMs,
+      untilMs,
+      previousSince,
+      previousUntil,
+      deadline,
+    );
   });
 
   // Drop projects that only look analytics-enabled (null) so they neither appear
