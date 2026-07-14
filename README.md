@@ -11,17 +11,33 @@ A Vercel Cron job hits `/api/report`, which:
 
 ## Setup
 
-1. **Deploy to Vercel** and link the project (`vercel link`).
-2. **Add Blob storage**: Vercel dashboard → Storage → create a Blob store and
-   connect it (this provisions `BLOB_READ_WRITE_TOKEN`). Optional — without it the
-   email still sends, just without the "full report" link.
-3. **Set environment variables** in the Vercel dashboard (see `.env.example`):
-   - `VERCEL_TOKEN` — access token with read access to your projects + analytics.
-   - `VERCEL_TEAM_ID` — only if the projects live under a team.
-   - `RESEND_API_KEY`, `REPORT_FROM` (verified domain), `REPORT_TO`.
-   - `CRON_SECRET` — any strong random value; Vercel injects it as a Bearer token
-     on cron requests, and the route rejects anything else.
-4. **Pull env locally** when developing: `vercel env pull` (do not hand-edit `.env`).
+The default `0 */6 * * *` schedule needs a Vercel Pro plan. On Hobby, change the
+cron to run about once per day. The project uses Node 24 and pnpm.
+
+1. Fork the repository and deploy it to Vercel with the Next.js preset.
+2. Create a Vercel access token at <https://vercel.com/account/tokens>. Scope it
+   to the team that owns the projects, set an expiration, and save it as
+   `VERCEL_TOKEN`. The REST API requires this access token; OIDC cannot
+   authenticate these requests.
+3. Enable Web Analytics from the Analytics tab of each project you want in the
+   digest.
+4. Add `VERCEL_TEAM_ID` (`team_...`) when the projects belong to a team. Omit it
+   for personal-account projects.
+5. Configure Resend. Create `RESEND_API_KEY`, verify a sending domain or
+   subdomain, use that domain in `REPORT_FROM`, and set `REPORT_TO`.
+6. To add a hosted full-report link, connect a public Vercel Blob store from
+   Project / Storage. Public access is fixed at creation and lets recipients
+   open the emailed link without signing in. Connecting the store adds
+   `BLOB_STORE_ID`; Vercel supplies `VERCEL_OIDC_TOKEN` to deployed functions.
+   Enable OIDC federation in Project / Settings / Security. This step is
+   optional. The email still sends when Blob is absent.
+7. Generate `CRON_SECRET` with `openssl rand -base64 32`. The route fails closed
+   when the secret is absent and requires it as a Bearer token.
+8. Set the variables in Project / Settings / Environment Variables and target
+   Production. See `.env.example`. `EXCLUDED_PROJECTS` accepts a comma-separated
+   list of project names or ids.
+9. Redeploy to Production. Vercel reads environment variables and storage
+   settings at deployment time.
 
 The cron schedule lives in `vercel.json` (`0 */6 * * *`).
 
@@ -31,11 +47,19 @@ The cron schedule lives in `vercel.json` (`0 */6 * * *`).
 curl -H "Authorization: Bearer $CRON_SECRET" https://<your-deployment>/api/report
 ```
 
+Expect an `ok: true` response. A null `reportUrl` means the deployment cannot see
+the Blob store or OIDC configuration; `incompleteProjects > 0` means at least one
+analytics request failed. Confirm that the report URL opens and the email arrives.
+
+For local development, run `vercel link` and then `vercel env pull`; do not
+hand-edit env files. The pulled OIDC token is development-scoped. Use the
+deployed endpoint to test Blob uploads.
+
 ## Notes
 
-- Window totals (pageviews + visitors) are grouped by `environment`, giving an
-  accurate deduplicated visitor count per window (production traffic only).
-- Deltas compare the current 6h window against the immediately preceding one, so
-  no local storage is needed.
+- Window totals (pageviews + visitors) are grouped by `environment`, which
+  deduplicates production visitors within each window.
+- Deltas compare the current 6h window against the previous 6h window, so the
+  app does not need local storage.
 - Per-project fetches run with bounded concurrency (5) to stay clear of rate limits;
   a failure on one project is reported inline without sinking the whole digest.
