@@ -1,5 +1,7 @@
 # Vercel Analytics Digest
 
+[![GPL-3.0 License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
 Emails a Web Analytics digest across **all** your Vercel projects on a configurable
 hourly interval (every 6 hours by default).
 A Vercel Cron job hits `/api/report`, which:
@@ -9,6 +11,15 @@ A Vercel Cron job hits `/api/report`, which:
    (for deltas), and the top routes (Web Analytics aggregate API).
 3. Uploads a standalone HTML report to Vercel Blob.
 4. Emails an inline digest (via Resend) with a link to the hosted report.
+
+## Requirements
+
+- Node.js 24 and pnpm for local development
+- A Vercel account and access token
+- Vercel Web Analytics enabled on at least one project
+- A Resend account with a verified sending domain
+- Vercel Pro for the default hourly cron dispatcher, or the documented daily
+  schedule for Hobby
 
 ## Setup
 
@@ -62,6 +73,14 @@ For local development, run `vercel link` and then `vercel env pull`; do not
 hand-edit env files. The pulled OIDC token is development-scoped. Use the
 deployed endpoint to test Blob uploads.
 
+To work on the homepage without connecting a Vercel project:
+
+```bash
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
 ## Notes
 
 - Window totals (pageviews + visitors) are grouped by `environment`, which
@@ -70,3 +89,13 @@ deployed endpoint to test Blob uploads.
   app does not need local storage.
 - Per-project fetches run with bounded concurrency (5) to stay clear of rate limits;
   a failure on one project is reported inline without sinking the whole digest.
+
+## Contributing and security
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local
+workflow. Please report vulnerabilities privately according to
+[SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
