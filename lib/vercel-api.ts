@@ -11,6 +11,18 @@ export interface VercelAuth {
   teamId: string | undefined;
 }
 
+/** Error carrying the Vercel API HTTP status and error code (when present). */
+export class VercelApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | undefined,
+    message: string,
+  ) {
+    super(message);
+    this.name = "VercelApiError";
+  }
+}
+
 interface VercelProject {
   id: string;
   name: string;
@@ -55,7 +67,15 @@ async function vercelFetch(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(
+    let code: string | undefined;
+    try {
+      code = (JSON.parse(body) as { error?: { code?: string } }).error?.code;
+    } catch {
+      // Non-JSON error body; leave code undefined.
+    }
+    throw new VercelApiError(
+      response.status,
+      code,
       `Vercel API ${response.status} for ${url.pathname}: ${body.slice(0, 500)}`,
     );
   }

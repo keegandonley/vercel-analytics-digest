@@ -4,7 +4,27 @@
  * (for deltas), and the top routes in the current window.
  */
 
-import { listAnalyticsProjects, queryAggregate, type VercelAuth } from "./vercel-api";
+import {
+  listAnalyticsProjects,
+  queryAggregate,
+  VercelApiError,
+  type VercelAuth,
+} from "./vercel-api";
+
+/**
+ * A project can advertise `webAnalytics` in the projects list yet still reject
+ * analytics queries with this code (analytics was never actually enabled). Such
+ * projects are dropped from the digest rather than reported as failures.
+ */
+const WEB_ANALYTICS_NOT_ENABLED = "web_analytics_not_enabled";
+
+function isAnalyticsNotEnabled(reason: unknown): boolean {
+  return (
+    reason instanceof VercelApiError &&
+    (reason.code === WEB_ANALYTICS_NOT_ENABLED ||
+      reason.message.includes(WEB_ANALYTICS_NOT_ENABLED))
+  );
+}
 
 export const WINDOW_MS = 6 * 60 * 60 * 1000;
 const TOP_ROUTES_LIMIT = 5;
@@ -76,7 +96,7 @@ async function fetchProjectReport(
   currentUntil: number,
   previousSince: number,
   previousUntil: number,
-): Promise<ProjectReport> {
+): Promise<ProjectReport | null> {
   // Settle each query independently: the top-routes call is a nice-to-have, so its
   // failure must not zero out the headline pageviews/visitors, which flow into the
   // report totals. Grouping by `environment` yields one production row per window,
@@ -102,6 +122,11 @@ async function fetchProjectReport(
       limit: TOP_ROUTES_LIMIT,
     }),
   ]);
+
+  // A project whose analytics isn't really enabled has no place in the digest.
+  if (currentResult.status === "rejected" && isAnalyticsNotEnabled(currentResult.reason)) {
+    return null;
+  }
 
   const current =
     currentResult.status === "fulfilled"
@@ -172,9 +197,9 @@ export async function buildReport(auth: VercelAuth): Promise<Report> {
   // Once the budget is spent, stop hitting the API and mark the rest as skipped so
   // a slow API day yields a partial (clearly-labelled) digest instead of a timeout.
   const deadline = Date.now() + DATA_BUDGET_MS;
-  const projectReports = await mapWithConcurrency(projects, CONCURRENCY, (project) => {
+  const settled = await mapWithConcurrency(projects, CONCURRENCY, (project) => {
     if (Date.now() >= deadline) {
-      return Promise.resolve<ProjectReport>({
+      return Promise.resolve<ProjectReport | null>({
         id: project.id,
         name: project.name,
         current: { pageviews: 0, visitors: 0 },
@@ -185,6 +210,10 @@ export async function buildReport(auth: VercelAuth): Promise<Report> {
     }
     return fetchProjectReport(auth, project, sinceMs, untilMs, previousSince, previousUntil);
   });
+
+  // Drop projects that only look analytics-enabled (null) so they neither appear
+  // in the digest nor inflate the incomplete count.
+  const projectReports = settled.filter((report): report is ProjectReport => report !== null);
 
   // Most active first, so the email leads with what matters.
   projectReports.sort((a, b) => b.current.pageviews - a.current.pageviews);
