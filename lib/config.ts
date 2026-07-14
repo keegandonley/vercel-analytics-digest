@@ -11,6 +11,7 @@ export interface AppConfig {
   reportFrom: string;
   reportTo: string[];
   cronSecret: string | undefined;
+  blobToken: string | undefined;
 }
 
 function required(name: string): string {
@@ -27,15 +28,21 @@ function optional(name: string): string | undefined {
 }
 
 export function getConfig(): AppConfig {
+  const reportTo = required("REPORT_TO")
+    .split(",")
+    .map((address) => address.trim())
+    .filter(Boolean);
+  if (reportTo.length === 0) {
+    throw new Error("REPORT_TO contained no valid email addresses");
+  }
+
   return {
     vercelToken: required("VERCEL_TOKEN"),
     vercelTeamId: optional("VERCEL_TEAM_ID"),
     resendApiKey: required("RESEND_API_KEY"),
     reportFrom: required("REPORT_FROM"),
-    reportTo: required("REPORT_TO")
-      .split(",")
-      .map((address) => address.trim())
-      .filter(Boolean),
+    reportTo,
     cronSecret: optional("CRON_SECRET"),
+    blobToken: optional("BLOB_READ_WRITE_TOKEN"),
   };
 }

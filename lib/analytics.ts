@@ -10,6 +10,12 @@ export const WINDOW_MS = 6 * 60 * 60 * 1000;
 const TOP_ROUTES_LIMIT = 5;
 /** Cap concurrent Vercel API calls so a large project count can't trip rate limits. */
 const CONCURRENCY = 5;
+/**
+ * Stop dispatching new project fetches after this much wall time so the function
+ * still has room (under its 60s maxDuration) to render, upload, and email a
+ * partial digest rather than being hard-killed with nothing sent.
+ */
+const DATA_BUDGET_MS = 35_000;
 
 export interface WindowStats {
   pageviews: number;
@@ -27,8 +33,10 @@ export interface ProjectReport {
   current: WindowStats;
   previous: WindowStats;
   topRoutes: RouteStat[];
-  /** Set when this project's data could not be fetched; it is still listed. */
+  /** Set when the headline (current-window) query failed; the project is still listed. */
   error?: string;
+  /** True when the run's time budget was exhausted before this project was fetched. */
+  skipped?: boolean;
 }
 
 export interface Report {
@@ -37,6 +45,12 @@ export interface Report {
   untilMs: number;
   projects: ProjectReport[];
   totals: WindowStats & { previous: WindowStats };
+  /** Count of projects whose current-window data is missing (errored or skipped). */
+  incompleteCount: number;
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
 }
 
 function toNumber(value: unknown): number {
@@ -63,56 +77,66 @@ async function fetchProjectReport(
   previousSince: number,
   previousUntil: number,
 ): Promise<ProjectReport> {
-  try {
-    // Grouping by `environment` yields one production row per window, giving an
-    // accurate deduplicated visitor count (unlike summing route- or hour-rows).
-    const [currentRows, previousRows, routeRows] = await Promise.all([
-      queryAggregate(auth, {
-        projectId: project.id,
-        by: "environment",
-        sinceMs: currentSince,
-        untilMs: currentUntil,
-      }),
-      queryAggregate(auth, {
-        projectId: project.id,
-        by: "environment",
-        sinceMs: previousSince,
-        untilMs: previousUntil,
-      }),
-      queryAggregate(auth, {
-        projectId: project.id,
-        by: "route",
-        sinceMs: currentSince,
-        untilMs: currentUntil,
-        limit: TOP_ROUTES_LIMIT,
-      }),
-    ]);
+  // Settle each query independently: the top-routes call is a nice-to-have, so its
+  // failure must not zero out the headline pageviews/visitors, which flow into the
+  // report totals. Grouping by `environment` yields one production row per window,
+  // giving an accurate deduplicated visitor count (unlike summing route/hour rows).
+  const [currentResult, previousResult, routesResult] = await Promise.allSettled([
+    queryAggregate(auth, {
+      projectId: project.id,
+      by: "environment",
+      sinceMs: currentSince,
+      untilMs: currentUntil,
+    }),
+    queryAggregate(auth, {
+      projectId: project.id,
+      by: "environment",
+      sinceMs: previousSince,
+      untilMs: previousUntil,
+    }),
+    queryAggregate(auth, {
+      projectId: project.id,
+      by: "route",
+      sinceMs: currentSince,
+      untilMs: currentUntil,
+      limit: TOP_ROUTES_LIMIT,
+    }),
+  ]);
 
-    const topRoutes: RouteStat[] = routeRows
-      .map((row) => ({
-        route: typeof row.route === "string" ? row.route : "(unknown)",
-        pageviews: toNumber(row.pageviews),
-      }))
-      .filter((entry) => entry.pageviews > 0)
-      .sort((a, b) => b.pageviews - a.pageviews);
+  const current =
+    currentResult.status === "fulfilled"
+      ? sumWindow(currentResult.value)
+      : { pageviews: 0, visitors: 0 };
+  const previous =
+    previousResult.status === "fulfilled"
+      ? sumWindow(previousResult.value)
+      : { pageviews: 0, visitors: 0 };
 
-    return {
-      id: project.id,
-      name: project.name,
-      current: sumWindow(currentRows),
-      previous: sumWindow(previousRows),
-      topRoutes,
-    };
-  } catch (error) {
-    return {
-      id: project.id,
-      name: project.name,
-      current: { pageviews: 0, visitors: 0 },
-      previous: { pageviews: 0, visitors: 0 },
-      topRoutes: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  const topRoutes: RouteStat[] =
+    routesResult.status === "fulfilled"
+      ? routesResult.value
+          .map((row) => ({
+            route: typeof row.route === "string" ? row.route : "(unknown)",
+            pageviews: toNumber(row.pageviews),
+          }))
+          // The API returns the top `limit` routes by pageviews and rolls the
+          // remainder into an "Others" bucket; drop that so we show only real routes
+          // (real route values start with "/", so this never removes one).
+          .filter((entry) => entry.pageviews > 0 && entry.route.toLowerCase() !== "others")
+          .sort((a, b) => b.pageviews - a.pageviews)
+      : [];
+
+  return {
+    id: project.id,
+    name: project.name,
+    current,
+    previous,
+    topRoutes,
+    // Only a failed headline (current-window) query marks the project incomplete;
+    // a missing previous window merely degrades the delta, and missing routes just
+    // empties the routes list.
+    error: currentResult.status === "rejected" ? errorMessage(currentResult.reason) : undefined,
+  };
 }
 
 /** Runs `worker` over `items` with a bounded number of concurrent tasks. */
@@ -145,9 +169,22 @@ export async function buildReport(auth: VercelAuth): Promise<Report> {
 
   const projects = await listAnalyticsProjects(auth);
 
-  const projectReports = await mapWithConcurrency(projects, CONCURRENCY, (project) =>
-    fetchProjectReport(auth, project, sinceMs, untilMs, previousSince, previousUntil),
-  );
+  // Once the budget is spent, stop hitting the API and mark the rest as skipped so
+  // a slow API day yields a partial (clearly-labelled) digest instead of a timeout.
+  const deadline = Date.now() + DATA_BUDGET_MS;
+  const projectReports = await mapWithConcurrency(projects, CONCURRENCY, (project) => {
+    if (Date.now() >= deadline) {
+      return Promise.resolve<ProjectReport>({
+        id: project.id,
+        name: project.name,
+        current: { pageviews: 0, visitors: 0 },
+        previous: { pageviews: 0, visitors: 0 },
+        topRoutes: [],
+        skipped: true,
+      });
+    }
+    return fetchProjectReport(auth, project, sinceMs, untilMs, previousSince, previousUntil);
+  });
 
   // Most active first, so the email leads with what matters.
   projectReports.sort((a, b) => b.current.pageviews - a.current.pageviews);
@@ -163,11 +200,16 @@ export async function buildReport(auth: VercelAuth): Promise<Report> {
     { pageviews: 0, visitors: 0, previous: { pageviews: 0, visitors: 0 } },
   );
 
+  const incompleteCount = projectReports.filter(
+    (project) => project.error !== undefined || project.skipped === true,
+  ).length;
+
   return {
     generatedAt: new Date(untilMs),
     sinceMs,
     untilMs,
     projects: projectReports,
     totals,
+    incompleteCount,
   };
 }

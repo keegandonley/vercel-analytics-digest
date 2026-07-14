@@ -79,7 +79,9 @@ function projectRowsHtml(projects: ProjectReport[]): string {
           : "—";
       const detail = project.error
         ? `<span style="color:#dc2626;">${escapeHtml(project.error)}</span>`
-        : `<span style="color:#6b7280;">${routes}</span>`;
+        : project.skipped
+          ? `<span style="color:#b45309;">Skipped — run time budget reached</span>`
+          : `<span style="color:#6b7280;">${routes}</span>`;
 
       return `
         <tr>
@@ -116,12 +118,18 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
        </p>`
     : "";
 
+  const incompleteBlock =
+    report.incompleteCount > 0
+      ? `<p style="margin:4px 0 0;font-size:13px;color:#b45309;font-weight:600;">⚠ ${report.incompleteCount} of ${report.projects.length} projects could not be loaded — totals below are undercounted.</p>`
+      : "";
+
   return `
   <div style="background:#f3f4f6;padding:24px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
       <div style="padding:24px 24px 8px;">
         <h1 style="margin:0;font-size:20px;color:#111827;">Analytics digest · last 6 hours</h1>
         <p style="margin:4px 0 0;font-size:13px;color:#6b7280;">${formatWindowLabel(report)}</p>
+        ${incompleteBlock}
       </div>
       <div style="padding:8px 24px 0;">
         <table style="width:100%;border-collapse:collapse;">
@@ -188,7 +196,9 @@ export function renderReportPage(report: Report): string {
           : `<li class="muted">No route data</li>`;
       const detail = project.error
         ? `<p class="error">${escapeHtml(project.error)}</p>`
-        : `<ul class="routes">${routes}</ul>`;
+        : project.skipped
+          ? `<p class="skipped">Skipped — run time budget reached</p>`
+          : `<ul class="routes">${routes}</ul>`;
 
       return `
       <article class="card">
@@ -246,6 +256,8 @@ export function renderReportPage(report: Report): string {
   .route-count { color: #9ca3af; font-variant-numeric: tabular-nums; }
   .muted { color: #6b7280; }
   .error { color: #ef4444; font-size: 13px; margin: 8px 0 0; }
+  .skipped { color: #f59e0b; font-size: 13px; margin: 8px 0 0; }
+  .warn { color: #f59e0b; font-size: 14px; font-weight: 600; margin: 0 0 24px; }
   footer { margin-top: 40px; color: #6b7280; font-size: 12px; }
 </style>
 </head>
@@ -255,6 +267,11 @@ export function renderReportPage(report: Report): string {
       <h1>Analytics digest</h1>
       <p>${escapeHtml(formatWindowLabel(report))} · last 6 hours</p>
     </header>
+    ${
+      report.incompleteCount > 0
+        ? `<p class="warn">⚠ ${report.incompleteCount} of ${report.projects.length} projects could not be loaded — totals are undercounted.</p>`
+        : ""
+    }
     <section class="summary">
       <div>
         <div class="big">${formatNumber(report.totals.pageviews)}</div>

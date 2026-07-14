@@ -75,7 +75,7 @@ export async function listAnalyticsProjects(
   let from: string | undefined;
 
   // Bound the loop defensively so a malformed pagination cursor can't spin forever.
-  for (let page = 0; page < 50; page += 1) {
+  for (let pageIndex = 0; pageIndex < 50; pageIndex += 1) {
     const params: Record<string, string> = { limit: "100" };
     if (from) {
       params.from = from;
@@ -85,11 +85,11 @@ export async function listAnalyticsProjects(
 
     // The endpoint returns either a bare array or a { projects, pagination } object.
     const isArrayShape = Array.isArray(json);
-    const page = isArrayShape
+    const pageProjects = isArrayShape
       ? (json as VercelProject[])
       : ((json as ProjectsListResponse).projects ?? []);
 
-    for (const project of page) {
+    for (const project of pageProjects) {
       if (project.webAnalytics) {
         projects.push({ id: project.id, name: project.name });
       }
@@ -97,7 +97,8 @@ export async function listAnalyticsProjects(
 
     // The bare-array shape carries no cursor, so it is inherently a single page.
     const next = isArrayShape ? undefined : (json as ProjectsListResponse).pagination?.next;
-    if (next === undefined || next === null) {
+    // Treat empty string the same as a missing cursor so we don't re-fetch page 1.
+    if (next === undefined || next === null || next === "") {
       break;
     }
     from = String(next);

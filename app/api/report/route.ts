@@ -23,8 +23,12 @@ function isAuthorized(request: Request, cronSecret: string): boolean {
 }
 
 /** Uploads the standalone report to Blob; returns undefined if Blob isn't set up. */
-async function uploadReport(html: string, generatedAt: Date): Promise<string | undefined> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+async function uploadReport(
+  html: string,
+  generatedAt: Date,
+  blobToken: string | undefined,
+): Promise<string | undefined> {
+  if (!blobToken) {
     return undefined;
   }
   try {
@@ -32,6 +36,7 @@ async function uploadReport(html: string, generatedAt: Date): Promise<string | u
     const blob = await put(key, html, {
       access: "public",
       contentType: "text/html; charset=utf-8",
+      token: blobToken,
     });
     return blob.url;
   } catch (error) {
@@ -66,9 +71,17 @@ export async function GET(request: Request): Promise<Response> {
       teamId: config.vercelTeamId,
     });
 
-    const reportUrl = await uploadReport(renderReportPage(report), report.generatedAt);
+    const reportUrl = await uploadReport(
+      renderReportPage(report),
+      report.generatedAt,
+      config.blobToken,
+    );
     const emailHtml = renderEmailHtml(report, reportUrl);
-    const subject = `Analytics · ${numberFormat.format(report.totals.pageviews)} views in the last 6h`;
+    const incompleteSuffix =
+      report.incompleteCount > 0 ? ` (${report.incompleteCount} incomplete)` : "";
+    const subject = `Analytics · ${numberFormat.format(
+      report.totals.pageviews,
+    )} views in the last 6h${incompleteSuffix}`;
 
     await sendDigestEmail({
       apiKey: config.resendApiKey,
@@ -81,6 +94,7 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({
       ok: true,
       projects: report.projects.length,
+      incompleteProjects: report.incompleteCount,
       totalPageviews: report.totals.pageviews,
       totalVisitors: report.totals.visitors,
       reportUrl: reportUrl ?? null,
