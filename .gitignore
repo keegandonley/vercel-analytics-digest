@@ -1,0 +1,11 @@
+/node_modules
+/.next
+/out
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# Env — Vercel is the source of truth; never commit local pulls
+.env
+.env*.local
+.vercel
