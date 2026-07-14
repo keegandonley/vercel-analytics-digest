@@ -1,11 +1,12 @@
+import { getSiteUrl, siteConfig } from "@/lib/site";
+
 interface EnvVar {
   name: string;
   requirement: "Required" | "If using a team" | "If using Blob" | "Optional";
   description: string;
 }
 
-const REPOSITORY_URL =
-  "https://github.com/keegandonley/vercel-analytics-digest";
+const REPOSITORY_URL = siteConfig.repositoryUrl;
 const FORK_URL = `${REPOSITORY_URL}/fork`;
 
 const ENV_VARS: EnvVar[] = [
@@ -103,8 +104,45 @@ function Code({ children }: { children: React.ReactNode }) {
 }
 
 export default function Home() {
+  const siteUrl = getSiteUrl();
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${siteUrl}#website`,
+        url: siteUrl,
+        name: siteConfig.name,
+        description: siteConfig.description,
+        inLanguage: "en-US",
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${siteUrl}#software`,
+        name: siteConfig.name,
+        url: siteUrl,
+        description: siteConfig.description,
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "Web",
+        isAccessibleForFree: true,
+        codeRepository: siteConfig.repositoryUrl,
+        author: {
+          "@type": "Person",
+          name: siteConfig.author.name,
+          url: siteConfig.author.url,
+        },
+      },
+    ],
+  };
+
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
       <a className="skip-link" href="#setup">
         Skip to setup
       </a>

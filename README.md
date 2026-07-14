@@ -35,7 +35,9 @@ cron to run about once per day. The project uses Node 24 and pnpm.
    when the secret is absent and requires it as a Bearer token.
 8. Set the variables in Project / Settings / Environment Variables and target
    Production. See `.env.example`. `EXCLUDED_PROJECTS` accepts a comma-separated
-   list of project names or ids.
+   list of project names or ids. If the site uses a custom domain, set
+   `NEXT_PUBLIC_SITE_URL` to its full origin so canonical and social metadata use
+   that domain; otherwise Vercel's production domain is detected automatically.
 9. Redeploy to Production. Vercel reads environment variables and storage
    settings at deployment time.
 
