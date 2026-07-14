@@ -10,6 +10,19 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const numberFormat = new Intl.NumberFormat("en-US");
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Vercel's schedule is a literal hourly cron because vercel.json cannot expand
+ * environment variables. Only hourly boundaries matching the configured cadence
+ * do real work. Direct authenticated requests remain useful as manual triggers.
+ */
+function isScheduledRunDue(request: Request, intervalHours: number, now = Date.now()): boolean {
+  if (request.headers.get("user-agent") !== "vercel-cron/1.0") {
+    return true;
+  }
+  return Math.floor(now / HOUR_MS) % intervalHours === 0;
+}
 
 /** Constant-time comparison of the incoming bearer token against CRON_SECRET. */
 function isAuthorized(request: Request, cronSecret: string): boolean {
@@ -65,6 +78,14 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isScheduledRunDue(request, config.reportIntervalHours)) {
+    return Response.json({
+      ok: true,
+      skipped: true,
+      reason: `Waiting for the ${config.reportIntervalHours}-hour interval boundary`,
+    });
+  }
+
   try {
     const report = await buildReport(
       {
@@ -72,6 +93,7 @@ export async function GET(request: Request): Promise<Response> {
         teamId: config.vercelTeamId,
       },
       config.excludedProjects,
+      config.reportIntervalHours,
     );
 
     const reportUrl = await uploadReport(renderReportPage(report));
@@ -80,7 +102,7 @@ export async function GET(request: Request): Promise<Response> {
       report.incompleteCount > 0 ? ` (${report.incompleteCount} incomplete)` : "";
     const subject = `Analytics · ${numberFormat.format(
       report.totals.pageviews,
-    )} views in the last 6h${incompleteSuffix}`;
+    )} views in the last ${config.reportIntervalHours}h${incompleteSuffix}`;
 
     await sendDigestEmail({
       apiKey: config.resendApiKey,

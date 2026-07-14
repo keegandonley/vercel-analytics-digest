@@ -1,6 +1,6 @@
 /**
  * Builds the cross-project analytics report: for each project with Web Analytics
- * enabled, it fetches the current 6-hour window, the preceding 6-hour window
+ * enabled, it fetches the configured current window, the preceding equal window
  * (for deltas), and the top routes in the current window.
  */
 
@@ -26,7 +26,7 @@ function isAnalyticsNotEnabled(reason: unknown): boolean {
   );
 }
 
-export const WINDOW_MS = 6 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 const TOP_ROUTES_LIMIT = 5;
 /** Cap concurrent Vercel API calls so a large project count can't trip rate limits. */
 const CONCURRENCY = 5;
@@ -72,6 +72,7 @@ export interface Report {
   generatedAt: Date;
   sinceMs: number;
   untilMs: number;
+  intervalHours: number;
   projects: ProjectReport[];
   totals: WindowStats & { previous: WindowStats };
   /** Count of projects whose current-window data is missing (errored or skipped). */
@@ -235,11 +236,13 @@ async function mapWithConcurrency<T, R>(
 export async function buildReport(
   auth: VercelAuth,
   excludedProjects: readonly string[] = [],
+  intervalHours = 6,
 ): Promise<Report> {
+  const windowMs = intervalHours * HOUR_MS;
   const untilMs = Date.now();
-  const sinceMs = untilMs - WINDOW_MS;
+  const sinceMs = untilMs - windowMs;
   const previousUntil = sinceMs;
-  const previousSince = sinceMs - WINDOW_MS;
+  const previousSince = sinceMs - windowMs;
 
   const allProjects = await listAnalyticsProjects(auth);
 
@@ -302,6 +305,7 @@ export async function buildReport(
     generatedAt: new Date(untilMs),
     sinceMs,
     untilMs,
+    intervalHours,
     projects: projectReports,
     totals,
     incompleteCount,

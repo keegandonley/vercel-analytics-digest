@@ -51,6 +51,12 @@ const ENV_VARS: EnvVar[] = [
       "Comma-separated project names or ids to exclude. Matching ignores case.",
   },
   {
+    name: "REPORT_INTERVAL_HOURS",
+    requirement: "Optional",
+    description:
+      "Digest cadence and comparison-window size in whole hours (1–24). Defaults to 6.",
+  },
+  {
     name: "BLOB_STORE_ID",
     requirement: "If using Blob",
     description:
@@ -361,9 +367,10 @@ export default function Home() {
             <div>
               <strong>Use Vercel Pro for the six-hour schedule.</strong>
               <p>
-                The included <Code>0 */6 * * *</Code> cron runs every six hours.
-                Vercel Hobby limits cron jobs to about one run per day, so use a
-                daily schedule on Hobby.
+                The included hourly cron checks <Code>REPORT_INTERVAL_HOURS</Code>
+                before sending; it defaults to every six hours. Vercel Hobby
+                limits cron jobs to about one run per day, so use a daily cron
+                and a 24-hour interval on Hobby.
               </p>
             </div>
           </div>

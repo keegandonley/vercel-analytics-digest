@@ -11,9 +11,14 @@ export interface AppConfig {
   reportFrom: string;
   reportTo: string[];
   cronSecret: string | undefined;
+  /** Digest cadence and analytics comparison-window size, in whole hours. */
+  reportIntervalHours: number;
   /** Project names or ids to omit from the digest, lower-cased for matching. */
   excludedProjects: string[];
 }
+
+const DEFAULT_REPORT_INTERVAL_HOURS = 6;
+const MAX_REPORT_INTERVAL_HOURS = 24;
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -26,6 +31,21 @@ function required(name: string): string {
 function optional(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+function reportIntervalHours(): number {
+  const value = optional("REPORT_INTERVAL_HOURS");
+  if (!value) {
+    return DEFAULT_REPORT_INTERVAL_HOURS;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_REPORT_INTERVAL_HOURS) {
+    throw new Error(
+      `REPORT_INTERVAL_HOURS must be a whole number from 1 to ${MAX_REPORT_INTERVAL_HOURS}`,
+    );
+  }
+  return parsed;
 }
 
 /** Parses a comma-separated env var into a trimmed, non-empty, lower-cased list. */
@@ -52,6 +72,7 @@ export function getConfig(): AppConfig {
     reportFrom: required("REPORT_FROM"),
     reportTo,
     cronSecret: optional("CRON_SECRET"),
+    reportIntervalHours: reportIntervalHours(),
     excludedProjects: csvLower("EXCLUDED_PROJECTS"),
   };
 }

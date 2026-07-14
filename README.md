@@ -1,18 +1,20 @@
 # Vercel Analytics Digest
 
-Emails a Web Analytics digest across **all** your Vercel projects every 6 hours.
+Emails a Web Analytics digest across **all** your Vercel projects on a configurable
+hourly interval (every 6 hours by default).
 A Vercel Cron job hits `/api/report`, which:
 
 1. Lists every project with Web Analytics enabled (`GET /v10/projects`).
-2. For each, queries the current 6-hour window, the previous 6-hour window (for
-   deltas), and the top routes (Web Analytics aggregate API).
+2. For each, queries the configured current window, the previous equal window
+   (for deltas), and the top routes (Web Analytics aggregate API).
 3. Uploads a standalone HTML report to Vercel Blob.
 4. Emails an inline digest (via Resend) with a link to the hosted report.
 
 ## Setup
 
-The default `0 */6 * * *` schedule needs a Vercel Pro plan. On Hobby, change the
-cron to run about once per day. The project uses Node 24 and pnpm.
+The hourly dispatcher in `vercel.json` needs a Vercel Pro plan. On Hobby, set
+`REPORT_INTERVAL_HOURS=24` and change its schedule to `0 0 * * *`. The project
+uses Node 24 and pnpm.
 
 1. Fork the repository and deploy it to Vercel with the Next.js preset.
 2. Create a Vercel access token at <https://vercel.com/account/tokens>. Scope it
@@ -35,13 +37,16 @@ cron to run about once per day. The project uses Node 24 and pnpm.
    when the secret is absent and requires it as a Bearer token.
 8. Set the variables in Project / Settings / Environment Variables and target
    Production. See `.env.example`. `EXCLUDED_PROJECTS` accepts a comma-separated
-   list of project names or ids. If the site uses a custom domain, set
+   list of project names or ids. `REPORT_INTERVAL_HOURS` accepts a whole number
+   from 1 through 24 and defaults to 6. If the site uses a custom domain, set
    `NEXT_PUBLIC_SITE_URL` to its full origin so canonical and social metadata use
    that domain; otherwise Vercel's production domain is detected automatically.
 9. Redeploy to Production. Vercel reads environment variables and storage
    settings at deployment time.
 
-The cron schedule lives in `vercel.json` (`0 */6 * * *`).
+Vercel does not expand environment variables in cron expressions, so the cron in
+`vercel.json` runs hourly and the route uses `REPORT_INTERVAL_HOURS` to decide
+which invocations produce a digest. Authenticated manual triggers always run.
 
 ## Manual trigger
 
@@ -61,7 +66,7 @@ deployed endpoint to test Blob uploads.
 
 - Window totals (pageviews + visitors) are grouped by `environment`, which
   deduplicates production visitors within each window.
-- Deltas compare the current 6h window against the previous 6h window, so the
+- Deltas compare the configured current window against the previous equal window, so the
   app does not need local storage.
 - Per-project fetches run with bounded concurrency (5) to stay clear of rate limits;
   a failure on one project is reported inline without sinking the whole digest.

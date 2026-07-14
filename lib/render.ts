@@ -20,6 +20,14 @@ function formatNumber(value: number): string {
   return numberFormat.format(value);
 }
 
+function compactInterval(report: Report): string {
+  return `${report.intervalHours}h`;
+}
+
+function intervalLabel(report: Report): string {
+  return `${report.intervalHours} hour${report.intervalHours === 1 ? "" : "s"}`;
+}
+
 interface Delta {
   text: string;
   /** "up" | "down" | "flat" — drives colour. */
@@ -228,7 +236,7 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
     totalsDelta.text
   }) across ${report.projects.length} project${
     report.projects.length === 1 ? "" : "s"
-  } in the last 6 hours.`;
+  } in the last ${intervalLabel(report)}.`;
 
   const incompleteBlock =
     report.incompleteCount > 0
@@ -271,7 +279,7 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
                   <tr>
                     <td style="padding:28px 28px 22px;">
                       <div style="font-family:${SANS_FONT};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#6b7280;"><span style="color:#111827;">▲</span>&nbsp;&nbsp;Vercel Analytics</div>
-                      <div style="padding-top:8px;font-family:${SANS_FONT};font-size:23px;font-weight:700;letter-spacing:-0.4px;color:#111827;">Six-hour traffic digest</div>
+                      <div style="padding-top:8px;font-family:${SANS_FONT};font-size:23px;font-weight:700;letter-spacing:-0.4px;color:#111827;">${escapeHtml(intervalLabel(report))} traffic digest</div>
                       <div style="padding-top:6px;font-family:${MONO_FONT};font-size:12px;color:#9ca3af;">${escapeHtml(
                         formatWindowLabel(report),
                       )}</div>
@@ -283,7 +291,7 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                         <tr>
                           <td style="padding-bottom:12px;font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">Total pageviews</td>
-                          <td align="right" style="padding-bottom:12px;font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">vs prior 6h</td>
+                          <td align="right" style="padding-bottom:12px;font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">vs prior ${compactInterval(report)}</td>
                         </tr>
                         <tr>
                           <td style="font-family:${SANS_FONT};font-size:44px;font-weight:700;letter-spacing:-1.5px;line-height:1;color:#ffffff;">${formatNumber(
@@ -313,7 +321,7 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
                         <tr>
                           <td style="font-family:${SANS_FONT};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Projects</td>
-                          <td align="right" style="font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">Δ vs prior 6h</td>
+                          <td align="right" style="font-family:${SANS_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.12em;color:#9ca3af;">Δ vs prior ${compactInterval(report)}</td>
                         </tr>
                       </table>
                     </td>
@@ -329,7 +337,7 @@ export function renderEmailHtml(report: Report, reportUrl: string | undefined): 
                         <tr>
                           <td align="center" style="padding-top:20px;border-top:1px solid #f0f1f3;font-family:${SANS_FONT};font-size:12px;line-height:1.6;color:#9ca3af;">Generated ${escapeHtml(
                             report.generatedAt.toISOString(),
-                          )}<br/>Vercel Web Analytics · every 6 hours</td>
+                          )}<br/>Vercel Web Analytics · every ${escapeHtml(intervalLabel(report))}</td>
                         </tr>
                       </table>
                     </td>
@@ -438,7 +446,7 @@ export function renderReportPage(report: Report): string {
   <div class="wrap">
     <header class="page">
       <h1>Analytics digest</h1>
-      <p>${escapeHtml(formatWindowLabel(report))} · last 6 hours</p>
+      <p>${escapeHtml(formatWindowLabel(report))} · last ${escapeHtml(intervalLabel(report))}</p>
     </header>
     ${
       report.incompleteCount > 0
@@ -450,7 +458,7 @@ export function renderReportPage(report: Report): string {
         <div class="big">${formatNumber(report.totals.pageviews)}</div>
         <div class="sub">total pageviews · ${formatNumber(report.totals.visitors)} visitors</div>
       </div>
-      <div class="delta-${totalsDelta.direction}" style="font-size:18px;font-weight:600;">${totalsDelta.text} <span class="sub">vs prior 6h</span></div>
+      <div class="delta-${totalsDelta.direction}" style="font-size:18px;font-weight:600;">${totalsDelta.text} <span class="sub">vs prior ${compactInterval(report)}</span></div>
     </section>
     <div class="grid">
       ${cards || '<p class="muted">No projects with Web Analytics enabled were found.</p>'}
