@@ -33,7 +33,9 @@ uses Node 24 and pnpm.
    `VERCEL_TOKEN`. The REST API requires this access token; OIDC cannot
    authenticate these requests.
 3. Enable Web Analytics from the Analytics tab of each project you want in the
-   digest.
+   digest. This app tracks its own landing page too: enable Web Analytics on the
+   project you deploy this to and its traffic shows up in that project's
+   Analytics tab. Leave it off and the tracker no-ops.
 4. Add `VERCEL_TEAM_ID` (`team_...`) when the projects belong to a team. Omit it
    for personal-account projects.
 5. Configure Resend. Create `RESEND_API_KEY`, verify a sending domain or
