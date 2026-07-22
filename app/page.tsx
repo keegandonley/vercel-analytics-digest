@@ -185,23 +185,19 @@ export default function Home() {
 
           <div className="hero" id="top">
             <div className="hero-copy">
-              <div className="eyebrow">
-                <span className="eyebrow-dot" />
-                Open source / self-hosted
-              </div>
               <h1>
-                Vercel analytics.
-                <span>Delivered by email.</span>
+                Your Vercel analytics,
+                <span>in your inbox.</span>
               </h1>
               <p className="hero-description">
-                Every six hours, the app collects pageviews, visitor counts,
-                and top routes from your projects. Resend emails the totals and
-                compares them with the previous six hours.
+                A small, self-hosted app that emails pageviews, visitors, and
+                top routes from all your projects. It runs on a schedule and
+                compares each report with the previous period.
               </p>
 
               <div className="hero-actions">
                 <a className="button button-primary" href="#setup">
-                  Deploy your own
+                  Read the setup guide
                   <ArrowIcon />
                 </a>
                 <a
@@ -211,19 +207,18 @@ export default function Home() {
                   rel="noreferrer"
                 >
                   <GitHubIcon />
-                  Star on GitHub
+                  View the source
                 </a>
               </div>
 
-              <p className="privacy-note">
-                <span aria-hidden="true">◇</span>
-                Your Vercel token stays in your project&apos;s environment.
-              </p>
+              <ul className="hero-facts" aria-label="Project details">
+                <li>Open source</li>
+                <li>Runs in your accounts</li>
+                <li>No database</li>
+              </ul>
             </div>
 
             <div className="digest-scene" aria-label="Example analytics digest">
-              <div className="orbit orbit-one" />
-              <div className="orbit orbit-two" />
               <div className="digest-card">
                 <div className="email-header">
                   <div className="email-brand">
@@ -280,41 +275,8 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="email-project">
-                  <div className="email-project-title">
-                    <strong>admin</strong>
-                    <span className="email-delta-up">▲ 9%</span>
-                  </div>
-                  <p>
-                    <strong>3,917</strong> pageviews <i>·</i>{" "}
-                    <strong>2,601</strong> visitors
-                  </p>
-                  <div className="email-traffic-bar">
-                    <span className="bar-two-thirds" />
-                  </div>
-                  <div className="email-routes">
-                    <div className="email-routes-label">
-                      Top pages <span>· by pageviews</span>
-                    </div>
-                    <div>
-                      <code>/dashboard</code>
-                      <span>1,612</span>
-                    </div>
-                    <div>
-                      <code>/reports</code>
-                      <span>984</span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="email-report-action">
                   <span>View the full report&nbsp;&nbsp;→</span>
-                </div>
-
-                <div className="email-generated">
-                  Generated 2026-07-14T17:00:00.000Z
-                  <br />
-                  Vercel Web Analytics · every 6 hours
                 </div>
               </div>
             </div>
@@ -322,43 +284,14 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="signal-strip" aria-label="Project features">
-        <div className="site-width signal-grid">
-          <div>
-            <span>01</span>
-            <p>
-              <strong>Analytics projects</strong>Combined in one digest
-            </p>
-          </div>
-          <div>
-            <span>02</span>
-            <p>
-              <strong>Six-hour schedule</strong>Current vs. previous
-            </p>
-          </div>
-          <div>
-            <span>03</span>
-            <p>
-              <strong>Runs in your accounts</strong>Vercel, Resend, optional Blob
-            </p>
-          </div>
-          <div>
-            <span>04</span>
-            <p>
-              <strong>No database</strong>Compares live windows
-            </p>
-          </div>
-        </div>
-      </section>
-
       <section className="setup-section" id="setup">
         <div className="site-width">
           <div className="section-heading setup-heading">
-            <span className="kicker">DEPLOYMENT RUNBOOK</span>
-            <h2>Set up your fork.</h2>
+            <span className="kicker">Setup guide</span>
+            <h2>Deploy your own digest.</h2>
             <p>
-              The app runs in your Vercel and Resend accounts. Setup takes about
-              10 minutes once your sending domain is verified.
+              Fork the repository, connect Vercel and Resend, then test your
+              first email. The guide below covers every required setting.
             </p>
           </div>
 
@@ -699,8 +632,8 @@ export default function Home() {
       <section className="open-source-cta">
         <div className="site-width cta-inner">
           <div>
-            <span className="kicker">OPEN SOURCE ON GITHUB</span>
-            <h2>Fork the repo and change what you need.</h2>
+            <span className="kicker">GitHub</span>
+            <h2>Want to inspect the code first?</h2>
           </div>
           <div className="cta-actions">
             <a
@@ -710,7 +643,7 @@ export default function Home() {
               rel="noreferrer"
             >
               <GitHubIcon />
-              Star the repo
+              View the source
             </a>
             <a
               className="button button-outline-light"
@@ -719,7 +652,7 @@ export default function Home() {
               rel="noreferrer"
             >
               <ForkIcon />
-              Fork your copy
+              Fork the repo
             </a>
           </div>
         </div>
